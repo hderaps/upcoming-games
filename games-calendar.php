@@ -40,10 +40,7 @@ function gc_unschedule_midnight_refresh(): void {
 }
 
 add_action( 'gc_midnight_refresh', function () {
-	$fetcher = new GC_Fetcher();
-	$fetcher->clear_cache();
-	$fetcher->get_upcoming_games( true );
-	$fetcher->get_past_results( true );
+	( new GC_Fetcher() )->refresh_all();
 } );
 
 /* ── Styles & scripts (only on our template page) ────────────────────── */
@@ -233,6 +230,25 @@ function gc_render_game( array $game ): void {
 }
 
 function gc_render_results( array $games ): void {
+	// Filter bar — same divisions as present in results
+	$division_order    = [ 'U9', 'U11', 'U13', 'U15', 'U17', 'Women', 'Senior' ];
+	$divisions_present = [];
+	foreach ( $games as $game ) {
+		$divisions_present[ $game['division'] ] = true;
+	}
+	$divisions = array_filter( $division_order, fn( $d ) => isset( $divisions_present[ $d ] ) );
+
+	echo '<div class="gc-filters">';
+	echo '<button class="gc-filter active" data-division="all">All</button>';
+	foreach ( $divisions as $div ) {
+		printf(
+			'<button class="gc-filter" data-division="%s">%s</button>',
+			esc_attr( $div ),
+			esc_html( $div )
+		);
+	}
+	echo '</div>';
+
 	echo '<div class="gc-wrap">';
 
 	$last_date = null;
@@ -270,7 +286,7 @@ function gc_render_result( array $game ): void {
 		$is_home ? $home_score > $away_score : $away_score > $home_score
 	);
 	?>
-	<div class="gc-game gc-result<?php echo $we_won ? ' gc-win' : ''; ?>">
+	<div class="gc-game gc-result<?php echo $we_won ? ' gc-win' : ''; ?>" data-division="<?php echo esc_attr( $game['division'] ); ?>">
 		<div class="gc-game-meta">
 			<span class="gc-badge gc-badge-<?php echo esc_attr( $div_slug ); ?>">
 				<?php echo esc_html( $game['division'] ); ?>
@@ -329,15 +345,15 @@ function gc_admin_page(): void {
 		return;
 	}
 
+	$fetcher = new GC_Fetcher();
+
 	if ( isset( $_POST['gc_refresh'] ) && check_admin_referer( 'gc_refresh_nonce' ) ) {
-		$fetcher = new GC_Fetcher();
-		$fetcher->clear_cache();
-		$fetcher->get_upcoming_games( true );
-		echo '<div class="notice notice-success"><p>Cache refreshed successfully.</p></div>';
+		$fetcher->refresh_all();
+		echo '<div class="notice notice-success"><p>Data refreshed successfully from live feeds.</p></div>';
 	}
 
-	$fetcher = new GC_Fetcher();
-	$games   = $fetcher->get_upcoming_games();
+	$games      = $fetcher->get_upcoming_games();
+	$last_updated = $fetcher->last_updated();
 	?>
 	<div class="wrap">
 		<h1>Ice Zoo Games Calendar</h1>
@@ -349,14 +365,22 @@ function gc_admin_page(): void {
 			<li>Publish the page — the full schedule will appear automatically.</li>
 		</ol>
 
-		<h2>Cache</h2>
+		<h2>Data</h2>
+		<p>
+			<?php if ( $last_updated ) : ?>
+				Last fetched from live feeds: <strong><?php echo esc_html( wp_date( 'D j M Y, g:i A', $last_updated ) ); ?></strong>.
+				Refreshes automatically every night at midnight (Sydney time).
+			<?php else : ?>
+				No data stored yet. Click the button below to fetch now.
+			<?php endif; ?>
+		</p>
 		<form method="post">
 			<?php wp_nonce_field( 'gc_refresh_nonce' ); ?>
 			<p>
 				<button type="submit" name="gc_refresh" class="button button-primary">
-					Refresh Cache Now
+					Refresh Now
 				</button>
-				<span class="description">&nbsp; Cache auto-expires every hour.</span>
+				<span class="description">&nbsp; Fetches fresh data from the ICS feeds and saves to the database.</span>
 			</p>
 		</form>
 

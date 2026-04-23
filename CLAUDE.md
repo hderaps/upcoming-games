@@ -47,14 +47,20 @@ GAME - Hippos (0) at Apes (3) - Senior
 ### Timezone
 DTSTART is stored as UTC in the feed. The fetcher converts to `Australia/Sydney`.
 
-## Caching
-WordPress transients:
-- `gc_upcoming_v4` — future games, sorted ascending, 1-hour TTL
-- `gc_past_v2` — past games, sorted newest-first, 1-hour TTL
-- Bump the version suffix whenever the stored data structure changes
-- `GC_Fetcher::clear_cache()` deletes both transients
-- Admin page at **Settings → Games Calendar** has a manual "Refresh Cache Now" button
-- WP-Cron job `gc_midnight_refresh` auto-refreshes both caches daily at midnight Sydney time
+## Data storage
+Games are stored permanently in `wp_options` (not transients — no expiry, always fast):
+- `gc_games_upcoming` — upcoming games, sorted ascending
+- `gc_games_past` — past games, sorted newest-first
+- `gc_games_updated` — Unix timestamp of last successful refresh
+
+Page loads always read from the DB via `get_option()` — never from the live feed.
+The live ICS feeds are only hit by:
+1. `GC_Fetcher::refresh_all()` — called by the daily cron and the admin "Refresh Now" button
+2. First-ever page load if no data is stored yet (e.g. fresh install)
+
+`GC_Fetcher::clear_cache()` deletes all three options plus any old transients from previous versions.
+Admin page at **Settings → Games Calendar** shows the last-fetched timestamp and a manual "Refresh Now" button.
+WP-Cron job `gc_midnight_refresh` calls `refresh_all()` daily at midnight Sydney time.
 
 ## Team logos
 Stored in `assets/logos/{slug}.jpg`. All 80×80px square.

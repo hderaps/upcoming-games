@@ -21,27 +21,26 @@
 		} );
 	}
 
-	// ── Division filter pills (upcoming panel only) ──────────────────────
-	const filters = document.querySelectorAll( '.gc-filter' );
-	const games   = document.querySelectorAll( '.gc-game' );
-	const groups  = document.querySelectorAll( '.gc-date-group' );
-
-	if ( ! filters.length ) return;
-
-	filters.forEach( function ( btn ) {
+	// ── Division filter pills (scoped per panel) ────────────────────────
+	document.querySelectorAll( '.gc-filter' ).forEach( function ( btn ) {
 		btn.addEventListener( 'click', function () {
-			filters.forEach( function ( b ) { b.classList.remove( 'active' ); } );
+			var panel = this.closest( '#gc-panel-upcoming, #gc-panel-results' );
+			if ( ! panel ) return;
+
+			// Deactivate sibling pills, activate this one
+			panel.querySelectorAll( '.gc-filter' ).forEach( function ( b ) {
+				b.classList.remove( 'active' );
+			} );
 			this.classList.add( 'active' );
 
 			var division = this.dataset.division;
 
-			games.forEach( function ( game ) {
-				var show = division === 'all' || game.dataset.division === division;
-				game.style.display = show ? '' : 'none';
+			panel.querySelectorAll( '.gc-game' ).forEach( function ( game ) {
+				game.style.display = ( division === 'all' || game.dataset.division === division ) ? '' : 'none';
 			} );
 
 			// Hide date groups that have no visible games
-			groups.forEach( function ( group ) {
+			panel.querySelectorAll( '.gc-date-group' ).forEach( function ( group ) {
 				var hasVisible = Array.from( group.querySelectorAll( '.gc-game' ) )
 					.some( function ( g ) { return g.style.display !== 'none'; } );
 				group.style.display = hasVisible ? '' : 'none';
