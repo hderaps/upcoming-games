@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:results.ihnsw.com.au)",
+      "WebFetch(domain:www.esportsdesk.com)"
+    ]
+  }
+}

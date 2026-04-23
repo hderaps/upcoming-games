@@ -1,0 +1,278 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Ice Zoo Games Calendar
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.gc-wrap {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	max-width: 680px;
+	margin: 0 auto;
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────── */
+.gc-tabs {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 24px;
+	border-bottom: 2px solid #1e3550;
+	justify-content: center;
+}
+
+.gc-tab {
+	padding: 10px 22px;
+	background: transparent;
+	border: none;
+	border-bottom: 3px solid transparent;
+	margin-bottom: -2px;
+	color: #718096;
+	font-size: 0.9rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s;
+}
+
+.gc-tab:hover {
+	color: #fff;
+	background: rgb(2, 146, 199)!important;
+}
+
+.gc-tab.active {
+	color: #fff;
+	background: rgb(2, 146, 199)!important;
+}
+
+/* ── Results — FINAL badge + win highlight + score ──────────────────── */
+.gc-final-badge {
+	font-size: 0.67rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #a0aec0;
+}
+
+.gc-win {
+	border-color: #38a169 !important;
+	box-shadow: 0 0 0 1px #38a169, 0 2px 8px rgba(56, 161, 105, 0.25);
+}
+
+.gc-score {
+	font-size: 1.4rem;
+	font-weight: 700;
+	color: #e2e8f0;
+	line-height: 1;
+	letter-spacing: 0.04em;
+}
+
+/* ── Division filter bar ────────────────────────────────────────────── */
+.gc-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 20px;
+	justify-content: center;
+
+}
+
+.gc-filter {
+	padding: 6px 16px;
+	border: 1px solid #1e3550;
+	border-radius: 20px;
+	background: #0f1e2e;
+	color: #718096;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition: all 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.gc-filter:hover {
+	border-color: #4a90c4!important;
+	color: #e2e8f0!important;
+	background: rgb(2, 146, 199)!important;
+}
+
+.gc-filter.active {
+	background: rgb(2, 146, 199)!important;
+	border-color: rgb(2, 146, 199)!important;
+	color: #fff!important;
+}
+
+/* ── Date group ─────────────────────────────────────────────────────── */
+.gc-date-group {
+	margin-bottom: 28px;
+}
+
+.gc-date-header {
+	background: rgb(2, 146, 199);
+	color: #fff;
+	font-size: 1rem;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	padding: 7px 14px;
+	border-left: 4px solid #7ec8e3;
+	margin-bottom: 6px;
+	border-radius: 2px 4px 4px 2px;
+}
+
+/* ── Game card ──────────────────────────────────────────────────────── */
+.gc-game {
+	background: #0f1e2e;
+	border: 1px solid #1e3550;
+	border-radius: 6px;
+	padding: 12px 16px;
+	margin-bottom: 6px;
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gc-game:hover {
+	border-color: #4a90c4;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Meta row: division badge + HOME/AWAY ───────────────────────────── */
+.gc-game-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+/* Division badges */
+.gc-badge {
+	display: inline-block;
+	font-size: 1.3rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	padding: 2px 8px;
+	border-radius: 3px;
+	color: #fff;
+	background: #2c5282;
+}
+
+.gc-badge-u9      { background: #553c9a; }
+.gc-badge-u11     { background: #2b6cb0; }
+.gc-badge-u13     { background: #276749; }
+.gc-badge-u15     { background: #744210; }
+.gc-badge-u17     { background: #9b2c2c; }
+.gc-badge-womens  { background: #97266d; }
+.gc-badge-women   { background: #97266d; }
+.gc-badge-senior  { background: #1a365d; }
+
+/* Home / Away indicators */
+.gc-ha-home {
+	font-size: 0.67rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #68d391;
+}
+
+.gc-ha-away {
+	font-size: 0.67rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #fc8181;
+}
+
+/* ── Game body: Away  VS  Home ──────────────────────────────────────── */
+.gc-game-body {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+/* Each team stacks logo above name */
+.gc-team {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.gc-team-name {
+	font-size: 0.9rem;
+	font-weight: 500;
+	color: #fff;
+	text-align: center;
+	word-break: break-word;
+}
+
+/* Team logos */
+.gc-logo {
+	width: 80px;
+	height: 80px;
+	object-fit: contain;
+	background: #1a2d40;
+	flex-shrink: 0;
+}
+
+/* Highlight our club's team */
+.gc-our-team .gc-team-name {
+	color: #e2e8f0;
+	font-weight: 700;
+	font-size: 1rem;
+}
+
+/* Centre column: time + VS */
+.gc-mid {
+	flex-shrink: 0;
+	text-align: center;
+	min-width: 64px;
+}
+
+.gc-game-date {
+	font-size: 0.65rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #4a90c4;
+	margin-bottom: 3px;
+}
+
+.gc-time {
+	font-size: 1.5rem;
+	font-weight: 600;
+	color: #7ec8e3;
+	line-height: 1;
+	margin-bottom: 2px;
+}
+
+.gc-vs-label {
+	font-size: 1rem;
+	font-weight: 700;
+	color: #fff;
+	letter-spacing: 0.05em;
+}
+
+/* ── Venue ──────────────────────────────────────────────────────────── */
+.gc-venue {
+	margin-top: 10px;
+	font-size: 0.76rem;
+	color: #fff;
+}
+
+/* ── Empty state ────────────────────────────────────────────────────── */
+.gc-empty {
+	color: #718096;
+	font-style: italic;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+	.gc-logo {
+		width: 56px;
+		height: 56px;
+	}
+
+	.gc-mid {
+		min-width: 48px;
+	}
+}
