@@ -8,9 +8,8 @@ class GC_Fetcher {
 	private const TIMEZONE  = 'Australia/Sydney';
 
 	// wp_options keys (autoload=false — only loaded when needed)
-	private const OPT_UPCOMING = 'gc_games_upcoming';
-	private const OPT_PAST     = 'gc_games_past';
-	private const OPT_UPDATED  = 'gc_games_updated'; // Unix timestamp of last successful refresh
+	private const OPT_ALL     = 'gc_games_all';     // all games, unsplit — filtered at read time
+	private const OPT_UPDATED = 'gc_games_updated'; // Unix timestamp of last successful refresh
 
 	private static array $leagues = [
 		31142 => [ 'name' => 'U9',      'teams' => [ 'Atom' ] ],
@@ -35,43 +34,75 @@ class GC_Fetcher {
 	/* ─ Public API ──────────────────────────────────────────────────── */
 
 	public function get_upcoming_games(): array {
-		$data = get_option( self::OPT_UPCOMING );
-		if ( false === $data ) {
-			// No data stored yet — do the initial fetch
-			$this->refresh_all();
-			$data = get_option( self::OPT_UPCOMING, [] );
-		}
-		return $data;
+		$all = $this->get_all();
+		$today = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
+		$games = array_values( array_filter( $all, fn( $g ) => $g['date'] >= $today ) );
+		usort( $games, fn( $a, $b ) => strcmp( $a['date'], $b['date'] ) );
+		return $games;
 	}
 
 	public function get_past_results(): array {
-		$data = get_option( self::OPT_PAST );
+		$all = $this->get_all();
+		$today = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
+		$games = array_values( array_filter( $all, fn( $g ) => $g['date'] < $today ) );
+		usort( $games, fn( $a, $b ) => strcmp( $b['date'], $a['date'] ) );
+		return $games;
+	}
+
+	private function get_all(): array {
+		$data = get_option( self::OPT_ALL );
 		if ( false === $data ) {
 			$this->refresh_all();
-			$data = get_option( self::OPT_PAST, [] );
+			$data = get_option( self::OPT_ALL, [] );
 		}
 		return $data;
 	}
 
 	/**
 	 * Fetch all ICS feeds, split into upcoming/past, and persist to wp_options.
-	 * Called by the daily cron job and the admin "Refresh Now" button.
+	 * Returns a report array: [ 'upcoming' => N, 'past' => N, 'leagues' => [...] ]
+	 * 'leagues' has one entry per league: [ 'name', 'games', 'error' ]
 	 */
-	public function refresh_all(): void {
-		$all   = $this->fetch_all_leagues();
-		$today = date( 'Y-m-d' );
+	public function refresh_all(): array {
+		$all    = [];
+		$report = [];
 
-		$upcoming = array_values( array_filter( $all, fn( $g ) => $g['date'] >= $today ) );
-		usort( $upcoming, fn( $a, $b ) => strcmp( $a['date'] . $a['_sort'], $b['date'] . $b['_sort'] ) );
-		array_walk( $upcoming, function ( &$g ) { unset( $g['_sort'] ); } );
+		foreach ( self::$leagues as $id => $league ) {
+			$resp = wp_remote_get( $this->ics_url( $id ), $this->request_args() );
 
-		$past = array_values( array_filter( $all, fn( $g ) => $g['date'] < $today ) );
-		usort( $past, fn( $a, $b ) => strcmp( $b['date'] . $b['_sort'], $a['date'] . $a['_sort'] ) );
-		array_walk( $past, function ( &$g ) { unset( $g['_sort'] ); } );
+			if ( is_wp_error( $resp ) ) {
+				$report[] = [ 'name' => $league['name'], 'games' => 0, 'error' => $resp->get_error_message() ];
+				continue;
+			}
 
-		update_option( self::OPT_UPCOMING, $upcoming, false );
-		update_option( self::OPT_PAST,     $past,     false );
-		update_option( self::OPT_UPDATED,  time(),    false );
+			$code = (int) wp_remote_retrieve_response_code( $resp );
+			if ( 200 !== $code ) {
+				$report[] = [ 'name' => $league['name'], 'games' => 0, 'error' => "HTTP $code" ];
+				continue;
+			}
+
+			$games  = $this->parse_ics( wp_remote_retrieve_body( $resp ), $league );
+			$games  = array_map( fn( $g ) => array_merge( $g, [ 'league_id' => $id ] ), $games );
+			$all    = array_merge( $all, $games );
+			$report[] = [ 'name' => $league['name'], 'games' => count( $games ), 'error' => null ];
+		}
+
+		// Sort all games chronologically and store as one list (no date split — that happens at read time)
+		usort( $all, fn( $a, $b ) => strcmp( $a['date'] . $a['_sort'], $b['date'] . $b['_sort'] ) );
+		array_walk( $all, function ( &$g ) { unset( $g['_sort'] ); } );
+
+		update_option( self::OPT_ALL,     $all,   false );
+		update_option( self::OPT_UPDATED, time(), false );
+
+		$today    = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
+		$upcoming = count( array_filter( $all, fn( $g ) => $g['date'] >= $today ) );
+		$past     = count( array_filter( $all, fn( $g ) => $g['date'] <  $today ) );
+
+		return [
+			'upcoming' => $upcoming,
+			'past'     => $past,
+			'leagues'  => $report,
+		];
 	}
 
 	public function last_updated(): ?int {
@@ -81,10 +112,11 @@ class GC_Fetcher {
 
 	/** Wipe stored data (forces a fresh fetch on next page load or cron run). */
 	public function clear_cache(): void {
-		delete_option( self::OPT_UPCOMING );
-		delete_option( self::OPT_PAST );
+		delete_option( self::OPT_ALL );
 		delete_option( self::OPT_UPDATED );
-		// Clean up any old transients from previous versions
+		// Clean up options and transients from previous versions
+		delete_option( 'gc_games_upcoming' );
+		delete_option( 'gc_games_past' );
 		delete_transient( 'gc_all_v1' );
 		delete_transient( 'gc_upcoming_v4' );
 		delete_transient( 'gc_past_v1' );
@@ -131,14 +163,6 @@ class GC_Fetcher {
 	}
 
 	/* ─ Fetching ────────────────────────────────────────────────────── */
-
-	private function fetch_all_leagues(): array {
-		$all = [];
-		foreach ( self::$leagues as $id => $league ) {
-			$all = array_merge( $all, $this->fetch_league( $id, $league ) );
-		}
-		return $all;
-	}
 
 	private function fetch_league( int $id, array $league ): array {
 		$resp = wp_remote_get( $this->ics_url( $id ), $this->request_args() );

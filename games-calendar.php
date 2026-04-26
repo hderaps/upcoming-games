@@ -348,8 +348,29 @@ function gc_admin_page(): void {
 	$fetcher = new GC_Fetcher();
 
 	if ( isset( $_POST['gc_refresh'] ) && check_admin_referer( 'gc_refresh_nonce' ) ) {
-		$fetcher->refresh_all();
-		echo '<div class="notice notice-success"><p>Data refreshed successfully from live feeds.</p></div>';
+		$result  = $fetcher->refresh_all();
+		$errors  = array_filter( $result['leagues'], fn( $l ) => null !== $l['error'] );
+		$total   = $result['upcoming'] + $result['past'];
+
+		if ( $total > 0 && empty( $errors ) ) {
+			printf(
+				'<div class="notice notice-success"><p>Refreshed successfully — <strong>%d upcoming</strong> and <strong>%d past</strong> games stored.</p></div>',
+				$result['upcoming'],
+				$result['past']
+			);
+		} elseif ( $total > 0 ) {
+			echo '<div class="notice notice-warning"><p>Partially refreshed — some leagues had errors (see below).</p></div>';
+		} else {
+			echo '<div class="notice notice-error"><p>Refresh failed — no games were fetched. Check the errors below.</p></div>';
+		}
+
+		if ( ! empty( $errors ) ) {
+			echo '<div class="notice notice-error"><ul>';
+			foreach ( $errors as $l ) {
+				printf( '<li><strong>%s</strong>: %s</li>', esc_html( $l['name'] ), esc_html( $l['error'] ) );
+			}
+			echo '</ul></div>';
+		}
 	}
 
 	$games      = $fetcher->get_upcoming_games();

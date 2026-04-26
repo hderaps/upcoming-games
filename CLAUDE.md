@@ -49,16 +49,17 @@ DTSTART is stored as UTC in the feed. The fetcher converts to `Australia/Sydney`
 
 ## Data storage
 Games are stored permanently in `wp_options` (not transients — no expiry, always fast):
-- `gc_games_upcoming` — upcoming games, sorted ascending
-- `gc_games_past` — past games, sorted newest-first
+- `gc_games_all` — all games unsorted, no upcoming/past split
 - `gc_games_updated` — Unix timestamp of last successful refresh
+
+The upcoming/past split is done at **read time** (not write time) using today's date in Australia/Sydney timezone. This means yesterday's games automatically move to Results without needing a refresh.
 
 Page loads always read from the DB via `get_option()` — never from the live feed.
 The live ICS feeds are only hit by:
 1. `GC_Fetcher::refresh_all()` — called by the daily cron and the admin "Refresh Now" button
 2. First-ever page load if no data is stored yet (e.g. fresh install)
 
-`GC_Fetcher::clear_cache()` deletes all three options plus any old transients from previous versions.
+`GC_Fetcher::clear_cache()` deletes both options plus any old transients/options from previous versions.
 Admin page at **Settings → Games Calendar** shows the last-fetched timestamp and a manual "Refresh Now" button.
 WP-Cron job `gc_midnight_refresh` calls `refresh_all()` daily at midnight Sydney time.
 
