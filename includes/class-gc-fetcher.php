@@ -76,7 +76,7 @@ class GC_Fetcher {
 			}
 
 			$code = (int) wp_remote_retrieve_response_code( $resp );
-			if ( 200 !== $code ) {
+			if ( $code < 200 || $code >= 300 ) {
 				$report[] = [ 'name' => $league['name'], 'games' => 0, 'error' => "HTTP $code" ];
 				continue;
 			}
@@ -167,7 +167,12 @@ class GC_Fetcher {
 	private function fetch_league( int $id, array $league ): array {
 		$resp = wp_remote_get( $this->ics_url( $id ), $this->request_args() );
 
-		if ( is_wp_error( $resp ) || 200 !== (int) wp_remote_retrieve_response_code( $resp ) ) {
+		if ( is_wp_error( $resp ) ) {
+			return [];
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $resp );
+		if ( $code < 200 || $code >= 300 ) {
 			return [];
 		}
 
