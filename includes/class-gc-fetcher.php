@@ -90,6 +90,15 @@ class GC_Fetcher {
 			$report[] = [ 'name' => $league['name'], 'games' => count( $games ), 'error' => null ];
 		}
 
+		// If every league failed (e.g. this server's outbound requests are blocked —
+		// see the push endpoint in games-calendar.php), don't wipe out whatever the
+		// automated push already has stored just because this direct fetch failed.
+		$all_failed = ! empty( array_filter( $report, fn( $l ) => null !== $l['error'] ) )
+			&& empty( array_filter( $report, fn( $l ) => null === $l['error'] ) );
+		if ( $all_failed && ! empty( get_option( self::OPT_ALL, [] ) ) ) {
+			return array_merge( $this->counts( get_option( self::OPT_ALL, [] ) ), [ 'leagues' => $report ] );
+		}
+
 		return array_merge( $this->finalize( $all ), [ 'leagues' => $report ] );
 	}
 
@@ -127,6 +136,11 @@ class GC_Fetcher {
 		update_option( self::OPT_ALL,     $all,   false );
 		update_option( self::OPT_UPDATED, time(), false );
 
+		return $this->counts( $all );
+	}
+
+	/** Split a games list into upcoming/past counts using today's date (Sydney time). */
+	private function counts( array $all ): array {
 		$today = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
 
 		return [
