@@ -3,7 +3,10 @@ defined( 'ABSPATH' ) || exit;
 
 class GC_Fetcher {
 
-	private const ICS_BASE  = 'https://www.esportsdesk.com/webcalSched.cfm';
+	// esportsdesk's WAF blocks WP Engine's shared IPs (returns HTTP 202, empty body),
+	// so requests are routed through a Cloudflare Worker proxy instead.
+	// See cloudflare-worker/ics-proxy.js for the worker source.
+	private const ICS_BASE  = 'https://odd-frog-771c.hugh-ba1.workers.dev/';
 	private const CLIENT_ID = '6103';
 	private const TIMEZONE  = 'Australia/Sydney';
 
@@ -87,21 +90,48 @@ class GC_Fetcher {
 			$report[] = [ 'name' => $league['name'], 'games' => count( $games ), 'error' => null ];
 		}
 
-		// Sort all games chronologically and store as one list (no date split — that happens at read time)
+		return array_merge( $this->finalize( $all ), [ 'leagues' => $report ] );
+	}
+
+	/**
+	 * Ingest raw ICS text fetched elsewhere (used by the REST push endpoint), since
+	 * this server's own outbound requests to esportsdesk are blocked — see
+	 * cloudflare-worker/ics-proxy.js and the "push" setup in games-calendar.php.
+	 * $ics_by_league: [ leagueID => raw ICS string ]
+	 * Returns the same report shape as refresh_all().
+	 */
+	public function ingest_from_ics_map( array $ics_by_league ): array {
+		$all    = [];
+		$report = [];
+
+		foreach ( self::$leagues as $id => $league ) {
+			if ( ! array_key_exists( $id, $ics_by_league ) ) {
+				$report[] = [ 'name' => $league['name'], 'games' => 0, 'error' => 'Not included in push' ];
+				continue;
+			}
+
+			$games  = $this->parse_ics( (string) $ics_by_league[ $id ], $league );
+			$games  = array_map( fn( $g ) => array_merge( $g, [ 'league_id' => $id ] ), $games );
+			$all    = array_merge( $all, $games );
+			$report[] = [ 'name' => $league['name'], 'games' => count( $games ), 'error' => null ];
+		}
+
+		return array_merge( $this->finalize( $all ), [ 'leagues' => $report ] );
+	}
+
+	/** Sort, strip helper fields, persist to wp_options, and return upcoming/past counts. */
+	private function finalize( array $all ): array {
 		usort( $all, fn( $a, $b ) => strcmp( $a['date'] . $a['_sort'], $b['date'] . $b['_sort'] ) );
 		array_walk( $all, function ( &$g ) { unset( $g['_sort'] ); } );
 
 		update_option( self::OPT_ALL,     $all,   false );
 		update_option( self::OPT_UPDATED, time(), false );
 
-		$today    = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
-		$upcoming = count( array_filter( $all, fn( $g ) => $g['date'] >= $today ) );
-		$past     = count( array_filter( $all, fn( $g ) => $g['date'] <  $today ) );
+		$today = ( new DateTime( 'now', new DateTimeZone( self::TIMEZONE ) ) )->format( 'Y-m-d' );
 
 		return [
-			'upcoming' => $upcoming,
-			'past'     => $past,
-			'leagues'  => $report,
+			'upcoming' => count( array_filter( $all, fn( $g ) => $g['date'] >= $today ) ),
+			'past'     => count( array_filter( $all, fn( $g ) => $g['date'] <  $today ) ),
 		];
 	}
 
@@ -138,6 +168,7 @@ class GC_Fetcher {
 			if ( is_wp_error( $resp ) ) {
 				$report[ $id ] = [
 					'league'       => $league['name'],
+					'url'          => $url,
 					'status'       => 'WP_Error: ' . $resp->get_error_message(),
 					'vevent_count' => 0,
 					'games_found'  => 0,
@@ -152,10 +183,37 @@ class GC_Fetcher {
 
 			$report[ $id ] = [
 				'league'       => $league['name'],
+				'url'          => $url,
 				'status'       => $code,
 				'vevent_count' => count( $m[0] ),
 				'games_found'  => count( $this->parse_ics( $body, $league ) ),
 				'sample'       => substr( $body, 0, 600 ),
+			];
+		}
+
+		// Control test: hits a totally unrelated third-party URL to check whether
+		// outbound wp_remote_get() calls are being intercepted/stubbed site-wide,
+		// independent of esportsdesk or the Cloudflare Worker.
+		$control_url  = 'https://httpbin.org/get';
+		$control_resp = wp_remote_get( $control_url, $this->request_args() );
+		if ( is_wp_error( $control_resp ) ) {
+			$report['control'] = [
+				'league'       => 'CONTROL (httpbin.org)',
+				'url'          => $control_url,
+				'status'       => 'WP_Error: ' . $control_resp->get_error_message(),
+				'vevent_count' => 0,
+				'games_found'  => 0,
+				'sample'       => '',
+			];
+		} else {
+			$control_body = wp_remote_retrieve_body( $control_resp );
+			$report['control'] = [
+				'league'       => 'CONTROL (httpbin.org)',
+				'url'          => $control_url,
+				'status'       => (int) wp_remote_retrieve_response_code( $control_resp ),
+				'vevent_count' => 0,
+				'games_found'  => 0,
+				'sample'       => substr( $control_body, 0, 600 ),
 			];
 		}
 
@@ -195,7 +253,13 @@ class GC_Fetcher {
 	private function request_args(): array {
 		return [
 			'timeout'    => 20,
-			'user-agent' => 'Mozilla/5.0 (compatible; WordPress/' . get_bloginfo( 'version' ) . ')',
+			// Identify as a calendar-subscription fetcher (like Google Calendar's), since
+			// this URL is esportsdesk's public webcal export link, not an internal API.
+			'user-agent' => 'Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)',
+			'headers'    => [
+				'Accept'          => 'text/calendar, text/plain, */*',
+				'Accept-Language' => 'en-US,en;q=0.9',
+			],
 			'sslverify'  => false,
 		];
 	}

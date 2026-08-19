@@ -43,6 +43,51 @@ add_action( 'gc_midnight_refresh', function () {
 	( new GC_Fetcher() )->refresh_all();
 } );
 
+/* ── Push endpoint ────────────────────────────────────────────────────
+ * This server's own outbound requests to esportsdesk are blocked (returns
+ * HTTP 202 with an empty body — looks like domain/IP reputation filtering,
+ * not fixable from our side). Instead, an external scheduled job fetches
+ * the ICS feeds and POSTs the raw content here, authenticated by a secret
+ * generated below. See the "Automated Push" section on the settings page.
+ */
+add_action( 'rest_api_init', function () {
+	register_rest_route( 'games-calendar/v1', '/push', [
+		'methods'             => 'POST',
+		'callback'            => 'gc_handle_push',
+		'permission_callback' => '__return_true',
+	] );
+} );
+
+function gc_get_push_secret(): string {
+	$secret = get_option( 'gc_push_secret' );
+	if ( ! $secret ) {
+		$secret = wp_generate_password( 40, false );
+		update_option( 'gc_push_secret', $secret, false );
+	}
+	return $secret;
+}
+
+function gc_handle_push( WP_REST_Request $request ) {
+	$provided = (string) $request->get_param( 'secret' );
+	if ( ! hash_equals( gc_get_push_secret(), $provided ) ) {
+		return new WP_REST_Response( [ 'error' => 'Invalid secret' ], 403 );
+	}
+
+	$leagues = $request->get_param( 'leagues' );
+	if ( ! is_array( $leagues ) ) {
+		return new WP_REST_Response( [ 'error' => 'Missing or invalid "leagues" field' ], 400 );
+	}
+
+	// JSON object keys arrive as strings; league IDs are ints internally.
+	$ics_by_league = [];
+	foreach ( $leagues as $id => $ics ) {
+		$ics_by_league[ (int) $id ] = $ics;
+	}
+
+	$result = ( new GC_Fetcher() )->ingest_from_ics_map( $ics_by_league );
+	return new WP_REST_Response( $result, 200 );
+}
+
 /* ── Styles & scripts (only on our template page) ────────────────────── */
 add_action( 'wp_enqueue_scripts', function () {
 	if ( is_page() && 'templates/page-games-calendar.php' === get_post_meta( get_the_ID(), '_wp_page_template', true ) ) {
@@ -373,6 +418,11 @@ function gc_admin_page(): void {
 		}
 	}
 
+	if ( isset( $_POST['gc_regen_secret'] ) && check_admin_referer( 'gc_refresh_nonce' ) ) {
+		update_option( 'gc_push_secret', wp_generate_password( 40, false ), false );
+		echo '<div class="notice notice-success"><p>New push secret generated — update your external job with the value below.</p></div>';
+	}
+
 	$games      = $fetcher->get_upcoming_games();
 	$last_updated = $fetcher->last_updated();
 	?>
@@ -405,6 +455,25 @@ function gc_admin_page(): void {
 			</p>
 		</form>
 
+		<h2>Automated Push</h2>
+		<p>This server's outbound requests to esportsdesk are blocked, so an external scheduled job fetches the feeds and pushes the data here instead of this site fetching it directly.</p>
+		<table class="widefat striped" style="max-width:720px">
+			<tr>
+				<th style="width:160px">Endpoint URL</th>
+				<td><code><?php echo esc_url( rest_url( 'games-calendar/v1/push' ) ); ?></code></td>
+			</tr>
+			<tr>
+				<th>Secret</th>
+				<td><code><?php echo esc_html( gc_get_push_secret() ); ?></code></td>
+			</tr>
+		</table>
+		<form method="post" style="margin-top:8px">
+			<?php wp_nonce_field( 'gc_refresh_nonce' ); ?>
+			<button type="submit" name="gc_regen_secret" class="button" onclick="return confirm('This invalidates the current secret — the external job will need updating with the new one. Continue?');">
+				Regenerate Secret
+			</button>
+		</form>
+
 		<h2>Diagnostics</h2>
 		<form method="post">
 			<?php wp_nonce_field( 'gc_refresh_nonce' ); ?>
@@ -421,6 +490,7 @@ function gc_admin_page(): void {
 				<thead>
 					<tr>
 						<th>League</th>
+						<th>URL fetched</th>
 						<th>HTTP Status</th>
 						<th>Events in feed</th>
 						<th>Our games parsed</th>
@@ -431,6 +501,7 @@ function gc_admin_page(): void {
 					<?php foreach ( $diag as $id => $d ) : ?>
 						<tr>
 							<td><strong><?php echo esc_html( $d['league'] ); ?></strong><br><small style="color:#999">leagueID=<?php echo esc_html( $id ); ?></small></td>
+							<td style="word-break:break-all;max-width:260px"><small><?php echo esc_html( $d['url'] ); ?></small></td>
 							<td><?php echo esc_html( $d['status'] ); ?></td>
 							<td><?php echo esc_html( $d['vevent_count'] ); ?></td>
 							<td><strong><?php echo esc_html( $d['games_found'] ); ?></strong></td>
